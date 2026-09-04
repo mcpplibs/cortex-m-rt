@@ -177,13 +177,15 @@ jobs:
           done
           sed -e "s/{{project\.name}}/tpl/g" \
               templates/blinky/src/main.cpp.in > "$D/src/main.cpp"
-          # ⚠️ The dependency is rewritten to a path: the rendered manifest names
-          # this version, which is not published yet, and a silent fall back to
-          # the previous one would be testing the wrong tree.
-          sed -i.bak "s|cortex-m-rt = \"$V\"|cortex-m-rt = { path = \"$PWD\" }|" "$D/mcpp.toml"
-          rm -f "$D/mcpp.toml.bak"
+          # ⚠️ THE DEPENDENCY IS ADDED HERE, BECAUSE THE TEMPLATE DOES NOT
+          # CARRY IT. `mcpp new --template` injects the template's own package
+          # at the version it scaffolded from; rendering by hand skips that, so
+          # the check supplies the same edge as a PATH — which is also what
+          # keeps it testing THIS tree rather than the previously published one.
+          printf '\n[dependencies]\ncortex-m-rt = { path = "%s" }\n' "$PWD" \
+            >> "$D/mcpp.toml"
           grep -q 'path = ' "$D/mcpp.toml" \
-            || { cat "$D/mcpp.toml"; echo "::error::the dependency rewrite did not apply"; exit 1; }
+            || { cat "$D/mcpp.toml"; echo "::error::the dependency edge was not added"; exit 1; }
           ( cd "$D" && mcpp build > /dev/null 2>&1 ) || true
           ( cd "$D" && mcpp run > tpl.log 2>&1 ) \
             || { cat "$D/tpl.log"; echo "::error::the generated project does not run"; exit 1; }

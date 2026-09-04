@@ -16,8 +16,10 @@ sources = ["src/main.cpp"]
 [target.thumbv7m-none-eabi]
 sysroot = ""
 
-[dependencies]
-cortex-m-rt = "{{self.version}}"
+# ⚠️ NO `[dependencies]` LINE FOR THE BOARD ITSELF. `mcpp new --template` injects
+# the template's own package as a dependency at the version it scaffolded from,
+# which is the version that actually has this template — writing it here as well
+# would name the package twice, and pin it to whatever this file happened to say.
 
 # ⭐ ONE LINE IS WHAT MOVING TO HARDWARE COSTS.
 #
@@ -27,6 +29,7 @@ cortex-m-rt = "{{self.version}}"
 # Same command, same source, same manifest. A project that has moved to hardware
 # for good says so on the dependency instead and stops installing an emulator:
 #
+#     [dependencies]
 #     cortex-m-rt = { version = "{{self.version}}", default-features = false,
 #                     features = ["hardware"] }
 [features]
