@@ -74,7 +74,7 @@ libc = {}
 # supplying its own is not handed a second copy. picolibc depends on them, so a
 # consumer names only the C library.
 [feature-deps.libc]
-picolibc = "1.8.12"
+picolibc = "0.1.0"
 
 [feature-xlings.hardware]
 "xim:probe-rs" = { version = "", when = "run" }
