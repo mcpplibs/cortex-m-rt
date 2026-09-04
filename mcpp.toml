@@ -11,7 +11,7 @@
 [package]
 namespace   = "mcpplibs"
 name        = "cortex-m-rt"
-version     = "0.2.0"
+version     = "0.2.1"
 description = "Board support for Cortex-M: startup, memory layout, semihosting console, and the runners that reach an emulator or a debug probe"
 license     = "Apache-2.0"
 authors     = ["mcpplibs"]
@@ -74,7 +74,7 @@ libc = {}
 # supplying its own is not handed a second copy. picolibc depends on them, so a
 # consumer names only the C library.
 [feature-deps.libc]
-picolibc.picolibc = "0.1.0"
+picolibc.picolibc = "0.1.1"
 
 [feature-xlings.hardware]
 "xim:probe-rs" = { version = "", when = "run" }
