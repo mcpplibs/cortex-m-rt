@@ -25,6 +25,7 @@ sysroot = ""
 #
 #     mcpp run                        # the emulator
 #     mcpp run --features hardware    # the board, over a debug probe
+#     mcpp run --features libc        # with a C library
 #
 # Same command, same source, same manifest. A project that has moved to hardware
 # for good says so on the dependency instead and stops installing an emulator:
@@ -32,5 +33,17 @@ sysroot = ""
 #     [dependencies]
 #     cortex-m-rt = { version = "{{self.version}}", default-features = false,
 #                     features = ["hardware"] }
+# ⚠️⚠️ THE FORWARD TOKEN CARRIES THE NAMESPACE, BECAUSE THE DEPENDENCY DOES.
+#
+# `mcpp new --template` injects the board as `mcpplibs.cortex-m-rt`, and a
+# forward names the dependency by the SAME key. Writing the short name produces
+#
+#     warning: feature 'hardware' forwards to dependency 'cortex-m-rt' which is
+#              not declared in [dependencies] or [feature-deps]
+#
+# and then does nothing — a warning, not an error, so the flag is accepted and
+# silently has no effect. Found in a sandbox, where the package resolves under
+# its published identity rather than a local path.
 [features]
-hardware = { forward = ["cortex-m-rt/hardware"] }
+hardware = { forward = ["mcpplibs.cortex-m-rt/hardware"] }
+libc     = { forward = ["mcpplibs.cortex-m-rt/libc"] }

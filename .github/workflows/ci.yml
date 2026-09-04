@@ -177,7 +177,7 @@ jobs:
         run: |
           set -euo pipefail
           D=$(mktemp -d); mkdir -p "$D/src"
-          printf '[package]\nname="lc"\nversion="0.1.0"\n[build]\ntarget="thumbv7m-none-eabi"\nsources=["src/main.c"]\n[targets.lc]\nkind="bin"\nmain="src/main.c"\n[dependencies]\ncortex-m-rt = { path = "%s" }\n[features]\nlibc = { forward = ["cortex-m-rt/libc"] }\n' \
+          printf '[package]\nname="lc"\nversion="0.1.0"\n[build]\ntarget="thumbv7m-none-eabi"\nsources=["src/main.c"]\n[targets.lc]\nkind="bin"\nmain="src/main.c"\n[dependencies]\nmcpplibs.cortex-m-rt = { path = "%s" }\n[features]\nlibc = { forward = ["mcpplibs.cortex-m-rt/libc"] }\n' \
             "$GITHUB_WORKSPACE" > "$D/mcpp.toml"
           printf '#include <stdio.h>\n#include <stdlib.h>\nvolatile float fa=3.0f,fb=4.0f;\nint main(void){printf("libc: %%.2f\\n",(double)(fa*fb+1.0f));exit(0);}\n' \
             > "$D/src/main.c"
@@ -223,7 +223,7 @@ jobs:
           # at the version it scaffolded from; rendering by hand skips that, so
           # the check supplies the same edge as a PATH — which is also what
           # keeps it testing THIS tree rather than the previously published one.
-          printf '\n[dependencies]\ncortex-m-rt = { path = "%s" }\n' "$PWD" \
+          printf '\n[dependencies]\nmcpplibs.cortex-m-rt = { path = "%s" }\n' "$PWD" \
             >> "$D/mcpp.toml"
           grep -q 'path = ' "$D/mcpp.toml" \
             || { cat "$D/mcpp.toml"; echo "::error::the dependency edge was not added"; exit 1; }
