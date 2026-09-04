@@ -72,6 +72,35 @@ jobs:
       # AND THE PAIR IS THE TEST. "qemu is absent from the build" is also
       # satisfied by an mcpp that provisions nothing at all, or by a manifest
       # that never parsed. The `run` half below is the denominator.
+      # A DEPENDENCY PATH THAT ESCAPES THE PACKAGE MUST NEVER BE RELEASED.
+      #
+      # A local `path =` override is how this package is developed against an
+      # unreleased sibling, and it is invisible to every test that runs from
+      # this checkout: the sibling IS there, so the build succeeds and CI is
+      # green. It fails only for a consumer, who gets
+      #
+      #     error: path dependency '...' (at '.../compiler-rt-builtins')
+      #            has no mcpp.toml
+      #
+      # after the version is published and mirrored. Measured: exactly that
+      # shipped once, because a probe re-applied an override and the restore
+      # ran in a shell that had already exited.
+      #
+      # An INTERNAL path is fine — openarch names its own backends that way.
+      # What cannot ship is one that leaves the package.
+      - name: No dependency path escapes the package
+        run: |
+          set -euo pipefail
+          bad=$(awk '/^\[(dependencies|feature-deps|target\..*dependencies)/{s=1;next}
+                     /^\[/{s=0}
+                     s && /path *= *"(\.\.\/|\/)/{print FILENAME": "$0}' mcpp.toml || true)
+          if [ -n "$bad" ]; then
+            echo "$bad"
+            echo "::error::a dependency path escapes the package; it would break every consumer"
+            exit 1
+          fi
+          echo "  ok  no escaping path dependency"
+
       - name: A build asks for no emulator
         working-directory: examples/blinky
         run: |
