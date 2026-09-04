@@ -1,6 +1,6 @@
 # The first program: it prints, and it reports a status.
 #
-# ⭐ THE SAME TWO COMMANDS ON EITHER ENVIRONMENT.
+# THE SAME TWO COMMANDS ON EITHER ENVIRONMENT.
 #
 #     mcpp run                        # under the emulator
 #     mcpp run --features hardware    # on the board
@@ -21,7 +21,7 @@ sysroot = ""
 [dependencies]
 cortex-m-rt = { path = "../.." }
 
-# ⭐ ONE LINE IS WHAT MOVING TO HARDWARE COSTS.
+# ONE LINE IS WHAT MOVING TO HARDWARE COSTS.
 #
 # The board package expresses the two environments as features; this forwards
 # the project's own `hardware` to the board's, so the choice is made where every
@@ -30,7 +30,7 @@ cortex-m-rt = { path = "../.." }
 #     mcpp run                        # the emulator
 #     mcpp run --features hardware    # the board, without editing anything
 #
-# ⚠️ FEATURES ARE ADDITIVE, SO THE FLAG ADDS THE PROBE AND KEEPS THE EMULATOR.
+# FEATURES ARE ADDITIVE, SO THE FLAG ADDS THE PROBE AND KEEPS THE EMULATOR.
 # That is the right behaviour for trying a board once — the emulator is already
 # installed and costs nothing. A project that has MOVED to hardware says so on
 # the dependency and stops paying for the emulator at all:

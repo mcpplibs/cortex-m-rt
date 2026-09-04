@@ -11,7 +11,7 @@ mcpp run                        # under an emulator
 mcpp run --features hardware    # on a board, over a debug probe
 ```
 
-## ⭐⭐ One package, two environments
+## One package, two environments
 
 A board reached through an emulator and the same board reached through a debug
 probe differ in the argv of their runners and in **nothing else**: the linker
@@ -27,7 +27,7 @@ selects everything else.
 `mcpp build` installs neither. Both tools are declared on the `run` tier, so a CI
 job that compiles firmware and never flashes it downloads nothing.
 
-⚠️ Features are additive, so `--features hardware` *adds* the probe and keeps the
+Features are additive, so `--features hardware` *adds* the probe and keeps the
 emulator — which is right for trying a board once. A project that has moved to
 hardware says so on the dependency and stops paying for the emulator at all:
 
@@ -69,7 +69,7 @@ this package: defining `SysTick_Handler` anywhere in the program replaces the
 default spin. That is also how a scheduler built on
 [`openarch`](https://github.com/mcpplibs/openarch) installs its own PendSV.
 
-⚠️ **Semihosting, not a UART address.** A UART's address is a fact about one
+**Semihosting, not a UART address.** A UART's address is a fact about one
 part; semihosting is a fact about the debug architecture, and every Cortex-M has
 it — under an emulator and under a probe alike. That is what lets one package
 serve both, and what makes `mcpp test` work on a device at all: without an exit
@@ -85,7 +85,7 @@ mcpp run --features libc
 there is no multilib to match and no ABI convention to get wrong. Not selecting
 it leaves the tier exactly as it was.
 
-⚠️ **The board sets the thread pointer, and without it a C library faults before
+**The board sets the thread pointer, and without it a C library faults before
 its first output.** picolibc reaches `stdout` through thread-local storage;
 `src/start.c` calls `_init_tls`/`_set_tls` and the linker script defines the
 five symbols they read. Measured with that missing: a `printf` program linked
@@ -99,7 +99,7 @@ package stays there: it references no C library symbol.
 
 A C library arrives through the `libc` feature above.
 
-⚠️ **Floating point on a soft-float row needs compiler builtins.** `-mfpu=none`
+**Floating point on a soft-float row needs compiler builtins.** `-mfpu=none`
 makes the compiler lower a `float` multiply onto `__aeabi_fmul`, and at this tier
 there is nothing for that call to resolve against. Integer programs are
 unaffected; `--features libc` brings both the C library and the builtins.

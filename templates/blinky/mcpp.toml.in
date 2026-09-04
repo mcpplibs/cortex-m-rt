@@ -4,7 +4,7 @@ name    = "{{project.name}}"
 version = "0.1.0"
 
 [build]
-# ⚠️ THE TRIPLE IS THE ONE LINE TO CHANGE FOR ANOTHER PART. mcpp's target table
+# THE TRIPLE IS THE ONE LINE TO CHANGE FOR ANOTHER PART. mcpp's target table
 # has seven M-profile rows, and they produce incompatible objects: `thumbv7em`
 # uses instructions a Cortex-M0 does not have. Picking the row is picking the
 # part.
@@ -16,12 +16,12 @@ sources = ["src/main.cpp"]
 [target.thumbv7m-none-eabi]
 sysroot = ""
 
-# ⚠️ NO `[dependencies]` LINE FOR THE BOARD ITSELF. `mcpp new --template` injects
+# NO `[dependencies]` LINE FOR THE BOARD ITSELF. `mcpp new --template` injects
 # the template's own package as a dependency at the version it scaffolded from,
 # which is the version that actually has this template — writing it here as well
 # would name the package twice, and pin it to whatever this file happened to say.
 
-# ⭐ ONE LINE IS WHAT MOVING TO HARDWARE COSTS.
+# ONE LINE IS WHAT MOVING TO HARDWARE COSTS.
 #
 #     mcpp run                        # the emulator
 #     mcpp run --features hardware    # the board, over a debug probe
@@ -33,7 +33,7 @@ sysroot = ""
 #     [dependencies]
 #     cortex-m-rt = { version = "{{self.version}}", default-features = false,
 #                     features = ["hardware"] }
-# ⚠️⚠️ THE FORWARD TOKEN CARRIES THE NAMESPACE, BECAUSE THE DEPENDENCY DOES.
+# THE FORWARD TOKEN CARRIES THE NAMESPACE, BECAUSE THE DEPENDENCY DOES.
 #
 # `mcpp new --template` injects the board as `mcpplibs.cortex-m-rt`, and a
 # forward names the dependency by the SAME key. Writing the short name produces

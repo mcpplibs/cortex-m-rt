@@ -6,7 +6,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# ⚠️ AN EMULATOR JOB ON PURPOSE. A bare-metal package that only ever
+# AN EMULATOR JOB ON PURPOSE. A bare-metal package that only ever
 # type-checks is a package that has never been proven to boot — and the two
 # failures this package can have (a vector table collected by --gc-sections, a
 # semihosting exit call spelled the wrong way) both COMPILE and both LINK.
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
-      # ⚠️ THE FLOOR IS 2026.9.4.2, AND EVERY PART OF IT IS LOAD-BEARING:
+      # THE FLOOR IS 2026.9.4.2, AND EVERY PART OF IT IS LOAD-BEARING:
       #   * the Cortex-M target rows arrived in 2026.9.4.1;
       #   * `[xlings.workspace]` entry tiers (`when = "run"`) and
       #     `[feature-xlings.<f>]` arrived in 2026.9.4.2, and this package's
@@ -24,7 +24,7 @@ jobs:
       #   * `mcpp run --features` arrived in 2026.9.4.2, and without it the
       #     hardware path below is a manifest edit rather than a command.
       #
-      # ⚠️ A PACKAGE DEVELOPED AGAINST AN UNRELEASED ENGINE GETS A PIN NAMING A
+      # A PACKAGE DEVELOPED AGAINST AN UNRELEASED ENGINE GETS A PIN NAMING A
       # VERSION THAT DOES NOT EXIST YET, and CI then reports `not found in the
       # synced index` — never "the pin is from the future", which is what
       # actually happened. The order that avoids it is: release the engine, then
@@ -43,7 +43,7 @@ jobs:
 
       - name: Install mcpp
         run: |
-          # ⚠️ A LOOP, BECAUSE ONE `xlings update` CAN RETURN A STALE INDEX
+          # A LOOP, BECAUSE ONE `xlings update` CAN RETURN A STALE INDEX
           # WITHOUT SAYING SO. The index is published as an artifact behind a
           # pointer that propagates asynchronously after a version bump merges,
           # and "synced 0 seconds ago" describes when it was fetched rather than
@@ -61,7 +61,7 @@ jobs:
           mcpp --version
           mcpp self config --mirror GLOBAL
 
-      # ⭐⭐ THE ASSERTION THIS STEP EXISTS FOR IS THAT NOTHING IS INSTALLED.
+      # THE ASSERTION THIS STEP EXISTS FOR IS THAT NOTHING IS INSTALLED.
       #
       # The emulator is declared on the `run` tier, so `mcpp build` must not ask
       # for it. Testing that by INSTALLING would need a clean machine and a
@@ -69,7 +69,7 @@ jobs:
       # `MCPP_NO_AUTO_INSTALL=1` refuses to provision and names exactly what it
       # would have provisioned.
       #
-      # ⚠️ AND THE PAIR IS THE TEST. "qemu is absent from the build" is also
+      # AND THE PAIR IS THE TEST. "qemu is absent from the build" is also
       # satisfied by an mcpp that provisions nothing at all, or by a manifest
       # that never parsed. The `run` half below is the denominator.
       - name: A build asks for no emulator
@@ -110,13 +110,13 @@ jobs:
 
       - name: Install the emulator
         run: |
-          # ⚠️ BOTH HOMES. The shim on PATH dispatches against whichever home
+          # BOTH HOMES. The shim on PATH dispatches against whichever home
           # owns it, while `mcpp run` starts the runner through mcpp's own — an
           # emulator present in only one answers "not installed" from the other.
           xlings install xim:qemu-arm -y
           XLINGS_HOME="$HOME/.mcpp/registry" xlings install xim:qemu-arm -y
 
-      # ⚠️ THE IMAGE IS RUN, NOT INSPECTED, AND THE EXIT STATUS IS READ.
+      # THE IMAGE IS RUN, NOT INSPECTED, AND THE EXIT STATUS IS READ.
       #
       # Both failures this package can have compile and link. A vector table
       # collected by `--gc-sections` produces an image that does not boot; a
@@ -141,10 +141,45 @@ jobs:
           [ "$rc" = "0" ] \
             || { echo "::error::the image booted but reported exit $rc — check the semihosting exit call"; exit 1; }
 
-      # ⭐ THE TABLE'S OTHER ROWS. An object built for `thumbv7em` uses
+      # THE TABLE'S OTHER ROWS. An object built for `thumbv7em` uses
       # instructions a Cortex-M0 does not have, so a package that only ever
       # builds one row has not shown that its startup code is portable across
       # the family it claims.
+      # A `main` THAT RETURNS MUST TERMINATE, AND IT USED TO HANG FOR EVER.
+      #
+      # C defines returning from `main` as `exit(status)`. This package's startup
+      # called `board_main` for effect and then spun, so the first program a
+      # newcomer writes — one ending in `return 0` rather than in an explicit
+      # `board::exit` — printed its output and then ran until something killed
+      # it. There is no diagnostic for that state and the output looks correct.
+      #
+      # `timeout` IS THE ASSERTION. A regression here does not fail, it hangs,
+      # so the step has to impose a deadline of its own: without one the job
+      # burns its whole budget and reports a timeout that names the job rather
+      # than the cause.
+      - name: A main that returns terminates rather than hanging
+        run: |
+          set -euo pipefail
+          d=$(mktemp -d); mkdir -p "$d/src"
+          printf 'import mcpplibs.cortex_m_rt;\nint main() { board::print("returned\\n"); return 0; }\n' \
+            > "$d/src/main.cpp"
+          printf '[package]\nname="ret"\nversion="0.1.0"\n[build]\ntarget="thumbv7m-none-eabi"\nsources=["src/main.cpp"]\n[dependencies]\nmcpplibs.cortex-m-rt = { path = "%s" }\n' \
+            "$PWD" > "$d/mcpp.toml"
+          cd "$d"
+          mcpp build > /dev/null 2>&1 || true
+          set +e
+          timeout 120 mcpp run > ret.log 2>&1
+          rc=$?
+          set -e
+          cat ret.log
+          [ "$rc" != "124" ] \
+            || { echo "::error::the program hung: a returning main did not exit"; exit 1; }
+          grep -q 'returned' ret.log \
+            || { echo "::error::the program did not run"; exit 1; }
+          [ "$rc" = "0" ] \
+            || { echo "::error::expected exit 0 from a main returning 0, got $rc"; exit 1; }
+          echo "a returning main exited $rc"
+
       - name: Every verified M-profile row builds
         working-directory: examples/blinky
         run: |
@@ -162,14 +197,14 @@ jobs:
           # A count, because a loop that ran zero times also reaches this line.
           [ "$n" = "4" ] || { echo "::error::built $n rows, expected 4"; exit 1; }
 
-      # ⭐⭐ THE C LIBRARY, AND BOTH SIDES OF THE FEATURE.
+      # THE C LIBRARY, AND BOTH SIDES OF THE FEATURE.
       #
-      # ⚠️ THE ASSERTION IS THAT THE SAME SOURCE FAILS WITHOUT IT. "It builds
+      # THE ASSERTION IS THAT THE SAME SOURCE FAILS WITHOUT IT. "It builds
       # with --features libc" is satisfied by a board that always links a C
       # library, which is the thing the zero-libc tier exists not to be. The
       # pair is the test.
       #
-      # ⚠️ AND THE IMAGE IS RUN. A `printf` program whose thread pointer is
+      # AND THE IMAGE IS RUN. A `printf` program whose thread pointer is
       # unset links cleanly, runs, prints NOTHING and hangs — measured while
       # writing this. Only executing it tells that from success.
       - name: The libc feature brings a C library, and its absence does not
@@ -203,7 +238,7 @@ jobs:
             || { echo "::error::printf did not produce the expected output"; exit 1; }
           [ "$rc" = "0" ] || { echo "::error::it ran but exited $rc"; exit 1; }
 
-      # ⚠️ THE TEMPLATE IS RENDERED BY HAND, AND IT HAS TO BE. `mcpp new
+      # THE TEMPLATE IS RENDERED BY HAND, AND IT HAS TO BE. `mcpp new
       # --template` resolves the package from the INDEX, so asking it for a
       # template this commit ADDS would fetch the previously published version.
       # What belongs to this repository is the template's CONTENT.
@@ -218,7 +253,7 @@ jobs:
           done
           sed -e "s/{{project\.name}}/tpl/g" \
               templates/blinky/src/main.cpp.in > "$D/src/main.cpp"
-          # ⚠️ THE DEPENDENCY IS ADDED HERE, BECAUSE THE TEMPLATE DOES NOT
+          # THE DEPENDENCY IS ADDED HERE, BECAUSE THE TEMPLATE DOES NOT
           # CARRY IT. `mcpp new --template` injects the template's own package
           # at the version it scaffolded from; rendering by hand skips that, so
           # the check supplies the same edge as a PATH — which is also what

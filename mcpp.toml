@@ -1,6 +1,6 @@
 # Board support for Cortex-M — startup, memory map, console, and the way in.
 #
-# ⭐⭐ ONE PACKAGE, TWO ENVIRONMENTS. A board reached through an emulator and the
+# ONE PACKAGE, TWO ENVIRONMENTS. A board reached through an emulator and the
 # same board reached through a debug probe differ in the argv of their runners
 # and in nothing else: the linker script, the startup code, the memory map and
 # the exported module are the same board. Publishing two packages to vary four
@@ -11,7 +11,7 @@
 [package]
 namespace   = "mcpplibs"
 name        = "cortex-m-rt"
-version     = "0.2.2"
+version     = "0.2.3"
 description = "Board support for Cortex-M: startup, memory layout, semihosting console, and the runners that reach an emulator or a debug probe"
 license     = "Apache-2.0"
 authors     = ["mcpplibs"]
@@ -23,7 +23,7 @@ sources = ["src/cortex_m_rt.cppm", "src/start.c"]
 [targets.cortex-m-rt]
 kind = "lib"
 
-# ⚠️ THE ZERO-LIBC TIER, AND IT IS A DECISION RATHER THAN AN OMISSION.
+# THE ZERO-LIBC TIER, AND IT IS A DECISION RATHER THAN AN OMISSION.
 #
 # Every `thumb*-none-eabi*` row in mcpp's target table carries an empty C-library
 # column, so a project targeting one begins with no libc unless it asks. This
@@ -35,7 +35,7 @@ kind = "lib"
 # exactly as it was.
 
 [features]
-# ⚠️ `emulator` IS THE DEFAULT, AND THAT IS A DECISION ABOUT WHO IS READING.
+# `emulator` IS THE DEFAULT, AND THAT IS A DECISION ABOUT WHO IS READING.
 # Someone meeting this package has no board on their desk; someone who does has
 # a reason to say so. A default that required hardware would make the first
 # command fail for everyone who has not bought anything yet.
@@ -43,38 +43,38 @@ default  = ["emulator"]
 emulator = {}
 hardware = {}
 
-# ⭐⭐ THE C LIBRARY IS A FEATURE, AND NOT SELECTING IT IS THE ZERO-LIBC TIER.
+# THE C LIBRARY IS A FEATURE, AND NOT SELECTING IT IS THE ZERO-LIBC TIER.
 #
 # Every `thumb*-none-eabi*` row carries an empty C-library column, so a project
 # begins with none. This adds one — as a SOURCE package compiled with the
 # program's own flags, so there is no multilib to match and no ABI convention to
 # get wrong. `mcpp run --features libc` is the whole of it.
 #
-# ⭐ The same mechanism as `emulator`/`hardware`, used a second time. That is
+# The same mechanism as `emulator`/`hardware`, used a second time. That is
 # what lets this package ship a C library without waiting for one, and lets a
 # project that does not want one never download it.
 libc = {}
 
-# ⭐⭐ EACH ENVIRONMENT BRINGS ITS OWN TOOL, AND ONLY ITS OWN.
+# EACH ENVIRONMENT BRINGS ITS OWN TOOL, AND ONLY ITS OWN.
 #
 # The tables are symmetric on purpose: neither environment is the engine's idea
 # of normal, and a consumer downloads exactly what the feature they selected
 # needs. Someone who never asks for `hardware` never fetches a probe driver;
 # someone who always targets hardware never fetches an emulator.
 #
-# ⚠️ AND BOTH ARE ON THE `run` TIER, WHICH IS A SECOND, INDEPENDENT GATE. The
+# AND BOTH ARE ON THE `run` TIER, WHICH IS A SECOND, INDEPENDENT GATE. The
 # feature says WHO needs the tool; the tier says WHEN. Compiling firmware needs
 # neither — only reaching the board does — so a CI job that builds and never
 # flashes downloads nothing at all.
 [feature-xlings.emulator]
 "xim:qemu-arm" = { version = "9.2.4-1", when = "run" }
 
-# ⚠️ TWO PACKAGES AND NOT ONE. picolibc's printf formats floats through routines
+# TWO PACKAGES AND NOT ONE. picolibc's printf formats floats through routines
 # no C library defines; the builtins are a separate package so a project already
 # supplying its own is not handed a second copy. picolibc depends on them, so a
 # consumer names only the C library.
 [feature-deps.libc]
-picolibc.picolibc = "0.1.1"
+picolibc.picolibc = { version = "1.8.12", path = "../picolibc" }
 
 [feature-xlings.hardware]
 "xim:probe-rs" = { version = "", when = "run" }

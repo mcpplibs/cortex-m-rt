@@ -1,13 +1,13 @@
 /* The vector table and reset path — the two things no program on this machine
  * can supply for itself.
  *
- * ⚠️ C RATHER THAN C++, AND THAT IS THE ONE PLACE IT MATTERS. This translation
+ * C RATHER THAN C++, AND THAT IS THE ONE PLACE IT MATTERS. This translation
  * unit runs BEFORE `.data` is copied and `.bss` is cleared, so it must not read
  * a global with an initialiser or write one that lives in either section. C
  * makes that easy to see; a C++ file in the same position invites a static
  * constructor that the runtime has not yet been able to run.
  *
- * ⚠️⚠️ THE TABLE IS REFERENCED BY NOTHING. The hardware reads it at the image's
+ * THE TABLE IS REFERENCED BY NOTHING. The hardware reads it at the image's
  * load address, and mcpp links freestanding targets with `--gc-sections`, so it
  * survives only because the linker script says `KEEP(*(.vectors))`. The
  * criterion for this file is that the image BOOTS, never that it links.
@@ -16,7 +16,7 @@ extern unsigned __stack_top;
 extern unsigned __data_start, __data_end, __data_load;
 extern unsigned __bss_start, __bss_end;
 
-/* ⚠️⚠️ `main` IS DECLARED HERE AS C, AND A C++ PROGRAM'S `main` IS NOT.
+/* `main` IS DECLARED HERE AS C, AND A C++ PROGRAM'S `main` IS NOT.
  *
  * A C++ `main` at global scope is exempt from mangling only when the compiler
  * treats it as THE program entry point, and for a freestanding target it does
@@ -36,6 +36,10 @@ void Reset_Handler(void);
  * are what the zero-libc tier links instead. `__tls_base` is the linker
  * script's, and is zero when no C library asked for a TLS block. */
 extern char __tls_base[] __attribute__((weak));
+
+/* THE C LIBRARY'S `exit`, WHEN THERE IS ONE. Weak, so on the zero-libc tier
+ * this resolves to a null address instead of failing the link. */
+extern void exit(int) __attribute__((weak, __noreturn__));
 __attribute__((weak)) void _init_tls(void* p)      { (void)p; }
 __attribute__((weak)) void _set_tls(void* p)       { (void)p; }
 __attribute__((weak)) void __libc_init_array(void) { }
@@ -55,7 +59,7 @@ void DebugMon_Handler(void)   __attribute__((weak, alias("Default_Handler")));
 void PendSV_Handler(void)     __attribute__((weak, alias("Default_Handler")));
 void SysTick_Handler(void)    __attribute__((weak, alias("Default_Handler")));
 
-/* ⭐ EVERY SLOT IS `weak`, WHICH IS HOW A PROJECT TAKES ONE WITHOUT EDITING
+/* EVERY SLOT IS `weak`, WHICH IS HOW A PROJECT TAKES ONE WITHOUT EDITING
  * THIS FILE. Defining `SysTick_Handler` anywhere in the program replaces the
  * spin; defining nothing leaves a fault visible instead of silent. That is also
  * how a scheduler built on `openarch` installs its own PendSV: it names
@@ -70,8 +74,26 @@ void (* const g_vectors[])(void) = {
     PendSV_Handler, SysTick_Handler,
 };
 
+/* `SYS_EXIT_EXTENDED`, which is the call `board::exit` makes and for the same
+ * reason: on AArch32 the plain `SYS_EXIT` takes its reason in r1 and cannot also
+ * carry a status. Written out here rather than imported because this file is C
+ * and is the one translation unit that must not depend on anything.
+ *
+ * The spin afterwards is not dead code. `bkpt` on a part with no debug agent
+ * attached does not return an exit status to anybody, and halting is then the
+ * only honest thing left to do. */
+static void halt_with_status(int code) {
+    struct { unsigned reason; unsigned code; } block;
+    block.reason = 0x20026u;                  /* ADP_Stopped_ApplicationExit */
+    block.code   = (unsigned)code;
+    register int         r0 __asm__("r0") = 0x20;
+    register const void* r1 __asm__("r1") = &block;
+    __asm__ volatile("bkpt 0xAB" :: "r"(r0), "r"(r1) : "memory");
+    for (;;) {}
+}
+
 void Reset_Handler(void) {
-    /* ⚠️ COPIED AND CLEARED HERE, BECAUSE NOBODY ELSE WILL. On a hosted target
+    /* COPIED AND CLEARED HERE, BECAUSE NOBODY ELSE WILL. On a hosted target
      * the loader does this; on a device the image is whatever was written to
      * flash, and `.data`'s initialisers sit in flash while the variables live
      * in RAM. Skipping it produces a program whose globals hold whatever the
@@ -82,7 +104,7 @@ void Reset_Handler(void) {
     while (dst < &__data_end) *dst++ = *src++;
     for (dst = &__bss_start; dst < &__bss_end; ) *dst++ = 0;
 
-    /* ⚠️⚠️ THE THREAD POINTER, AND WITHOUT IT A C LIBRARY FAULTS BEFORE ITS
+    /* THE THREAD POINTER, AND WITHOUT IT A C LIBRARY FAULTS BEFORE ITS
      * FIRST OUTPUT.
      *
      * A freestanding image has no thread pointer until something sets one, and
@@ -96,7 +118,7 @@ void Reset_Handler(void) {
      * initialise and must not be made to link one. The C library defines these
      * when it is present, and this file's own definitions are used otherwise.
      *
-     * ⭐ This is the half of the startup contract a BOARD owns. picolibc's own
+     * This is the half of the startup contract a BOARD owns. picolibc's own
      * `picocrt` does the same three things and then decides which host layer to
      * reach — which is a board decision, so this package makes it rather than
      * taking picocrt's. */
@@ -104,10 +126,24 @@ void Reset_Handler(void) {
     _set_tls(__tls_base);
     __libc_init_array();
 
-    board_main();
+    int rc = board_main();
 
-    /* The entry returning is not an error and not a success: there is no
-     * caller and no operating system to report to. A project that wants a
-     * status reported calls `board::exit`. */
-    for (;;) {}
+    /* RETURNING FROM `main` IS `exit(status)`, AND C SAYS SO.
+     *
+     * This file used to call `board_main` for effect and then spin, on the
+     * reasoning that a freestanding entry has no caller to report to. The
+     * reasoning is wrong on both tiers, and measurably.
+     *
+     * With a C library in the graph, `exit` is what runs the `atexit` handlers
+     * and flushes the streams. Skipping it discards whatever a buffered stream
+     * still holds, so the last thing a program printed is the thing most likely
+     * to be lost — and nothing reports that it was.
+     *
+     * With no C library there is still a host: semihosting is how this package's
+     * console reaches it, and a program that reached this line already used it.
+     * Measured before the change: a `main` ending in `return 0` printed its
+     * output and then hung until the runner was killed, which is what a
+     * newcomer's first program does. */
+    if (exit) exit(rc);
+    halt_with_status(rc);
 }
