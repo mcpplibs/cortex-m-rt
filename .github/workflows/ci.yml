@@ -1,0 +1,192 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# ⚠️ AN EMULATOR JOB ON PURPOSE. A bare-metal package that only ever
+# type-checks is a package that has never been proven to boot — and the two
+# failures this package can have (a vector table collected by --gc-sections, a
+# semihosting exit call spelled the wrong way) both COMPILE and both LINK.
+jobs:
+  boot:
+    name: build + boot + report a status (thumbv7m, qemu)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      # ⚠️ THE FLOOR IS 2026.9.4.2, AND EVERY PART OF IT IS LOAD-BEARING:
+      #   * the Cortex-M target rows arrived in 2026.9.4.1;
+      #   * `[xlings.workspace]` entry tiers (`when = "run"`) and
+      #     `[feature-xlings.<f>]` arrived in 2026.9.4.2, and this package's
+      #     whole tool story is written in them;
+      #   * `mcpp run --features` arrived in 2026.9.4.2, and without it the
+      #     hardware path below is a manifest edit rather than a command.
+      #
+      # ⚠️ A PACKAGE DEVELOPED AGAINST AN UNRELEASED ENGINE GETS A PIN NAMING A
+      # VERSION THAT DOES NOT EXIST YET, and CI then reports `not found in the
+      # synced index` — never "the pin is from the future", which is what
+      # actually happened. The order that avoids it is: release the engine, then
+      # push this.
+      MCPP_VERSION: 2026.9.4.2
+      XLINGS_VERSION: v2026.8.17.2
+      XLINGS_NON_INTERACTIVE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xlings
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/openxlings/xlings/main/tools/other/quick_install.sh \
+            | bash -s "$XLINGS_VERSION"
+          echo "$HOME/.xlings/subos/current/bin" >> "$GITHUB_PATH"
+
+      - name: Install mcpp
+        run: |
+          # ⚠️ A LOOP, BECAUSE ONE `xlings update` CAN RETURN A STALE INDEX
+          # WITHOUT SAYING SO. The index is published as an artifact behind a
+          # pointer that propagates asynchronously after a version bump merges,
+          # and "synced 0 seconds ago" describes when it was fetched rather than
+          # what it contains. This is the wait a single update does not perform.
+          for attempt in 1 2 3 4 5 6; do
+            xlings update > /dev/null 2>&1 || true
+            if xlings install "mcpp@$MCPP_VERSION" -y -g; then break; fi
+            if [ "$attempt" = 6 ]; then
+              echo "::error::mcpp@$MCPP_VERSION never appeared in the index (6 attempts over 5 minutes). If it was just released, the pointer has not propagated; if the pin names a version that was never published, it never will."
+              exit 1
+            fi
+            echo "the index has not caught up yet (attempt $attempt of 6); waiting 60s"
+            sleep 60
+          done
+          mcpp --version
+          mcpp self config --mirror GLOBAL
+
+      # ⭐⭐ THE ASSERTION THIS STEP EXISTS FOR IS THAT NOTHING IS INSTALLED.
+      #
+      # The emulator is declared on the `run` tier, so `mcpp build` must not ask
+      # for it. Testing that by INSTALLING would need a clean machine and a
+      # network; the set mcpp REQUESTS is observable without either —
+      # `MCPP_NO_AUTO_INSTALL=1` refuses to provision and names exactly what it
+      # would have provisioned.
+      #
+      # ⚠️ AND THE PAIR IS THE TEST. "qemu is absent from the build" is also
+      # satisfied by an mcpp that provisions nothing at all, or by a manifest
+      # that never parsed. The `run` half below is the denominator.
+      - name: A build asks for no emulator
+        working-directory: examples/blinky
+        run: |
+          set -euo pipefail
+          MCPP_NO_AUTO_INSTALL=1 mcpp build 2>&1 | tee build.log || true
+          if grep -q 'qemu-arm' build.log; then
+            cat build.log
+            echo "::error::mcpp build asked for the emulator; the run tier is not applied"
+            exit 1
+          fi
+          grep -q 'Finished' build.log \
+            || { cat build.log; echo "::error::the build did not finish"; exit 1; }
+
+      - name: A run asks for exactly the emulator
+        working-directory: examples/blinky
+        run: |
+          set -euo pipefail
+          MCPP_NO_AUTO_INSTALL=1 mcpp run 2>&1 | tee run.log || true
+          grep -q 'qemu-arm' run.log \
+            || { cat run.log; echo "::error::mcpp run did not ask for the emulator"; exit 1; }
+          grep -q 'probe-rs' run.log \
+            && { cat run.log; echo "::error::mcpp run asked for a probe driver without the hardware feature"; exit 1; }
+          true
+
+      - name: The hardware feature asks for a probe, and a build still does not
+        working-directory: examples/blinky
+        run: |
+          set -euo pipefail
+          MCPP_NO_AUTO_INSTALL=1 mcpp build --features hardware 2>&1 | tee hwbuild.log || true
+          grep -q 'probe-rs' hwbuild.log \
+            && { cat hwbuild.log; echo "::error::building for hardware asked for the probe driver"; exit 1; }
+          MCPP_NO_AUTO_INSTALL=1 mcpp run --features hardware 2>&1 | tee hwrun.log || true
+          grep -q 'probe-rs' hwrun.log \
+            || { cat hwrun.log; echo "::error::running on hardware did not ask for the probe driver"; exit 1; }
+          true
+
+      - name: Install the emulator
+        run: |
+          # ⚠️ BOTH HOMES. The shim on PATH dispatches against whichever home
+          # owns it, while `mcpp run` starts the runner through mcpp's own — an
+          # emulator present in only one answers "not installed" from the other.
+          xlings install xim:qemu-arm -y
+          XLINGS_HOME="$HOME/.mcpp/registry" xlings install xim:qemu-arm -y
+
+      # ⚠️ THE IMAGE IS RUN, NOT INSPECTED, AND THE EXIT STATUS IS READ.
+      #
+      # Both failures this package can have compile and link. A vector table
+      # collected by `--gc-sections` produces an image that does not boot; a
+      # semihosting exit call spelled `SYS_EXIT` rather than `SYS_EXIT_EXTENDED`
+      # produces one that prints correctly and reports the WRONG status. Only
+      # running it catches the first, and only reading `$?` catches the second.
+      - name: The example boots and reports 0
+        working-directory: examples/blinky
+        run: |
+          set -euo pipefail
+          # Twice, the first allowed to fail: the toolchain payload is installed
+          # during a build, so the first build on a machine that has never
+          # targeted this triple is the one that installs it.
+          mcpp build > /dev/null 2>&1 || true
+          set +e
+          mcpp run > boot.log 2>&1
+          rc=$?
+          set -e
+          cat boot.log
+          grep -q 'hello from a Cortex-M' boot.log \
+            || { echo "::error::the image did not boot"; exit 1; }
+          [ "$rc" = "0" ] \
+            || { echo "::error::the image booted but reported exit $rc — check the semihosting exit call"; exit 1; }
+
+      # ⭐ THE TABLE'S OTHER ROWS. An object built for `thumbv7em` uses
+      # instructions a Cortex-M0 does not have, so a package that only ever
+      # builds one row has not shown that its startup code is portable across
+      # the family it claims.
+      - name: Every verified M-profile row builds
+        working-directory: examples/blinky
+        run: |
+          set -euo pipefail
+          n=0
+          for t in thumbv6m-none-eabi thumbv7m-none-eabi thumbv7em-none-eabihf \
+                   thumbv8m.main-none-eabi; do
+            rm -rf target
+            mcpp build --target "$t" > /dev/null 2>&1 || true
+            mcpp build --target "$t" \
+              || { echo "::error::$t does not build"; exit 1; }
+            echo "  ok  $t"
+            n=$((n+1))
+          done
+          # A count, because a loop that ran zero times also reaches this line.
+          [ "$n" = "4" ] || { echo "::error::built $n rows, expected 4"; exit 1; }
+
+      # ⚠️ THE TEMPLATE IS RENDERED BY HAND, AND IT HAS TO BE. `mcpp new
+      # --template` resolves the package from the INDEX, so asking it for a
+      # template this commit ADDS would fetch the previously published version.
+      # What belongs to this repository is the template's CONTENT.
+      - name: The template generates a project that boots
+        run: |
+          set -euo pipefail
+          V=$(grep -m1 '^version' mcpp.toml | cut -d'"' -f2)
+          D=$(mktemp -d); mkdir -p "$D/src"
+          for f in mcpp.toml README.md; do
+            sed -e "s/{{project\.name}}/tpl/g" -e "s/{{self\.version}}/$V/g" \
+                "templates/blinky/$f.in" > "$D/$f"
+          done
+          sed -e "s/{{project\.name}}/tpl/g" \
+              templates/blinky/src/main.cpp.in > "$D/src/main.cpp"
+          # ⚠️ The dependency is rewritten to a path: the rendered manifest names
+          # this version, which is not published yet, and a silent fall back to
+          # the previous one would be testing the wrong tree.
+          sed -i.bak "s|cortex-m-rt = \"$V\"|cortex-m-rt = { path = \"$PWD\" }|" "$D/mcpp.toml"
+          rm -f "$D/mcpp.toml.bak"
+          grep -q 'path = ' "$D/mcpp.toml" \
+            || { cat "$D/mcpp.toml"; echo "::error::the dependency rewrite did not apply"; exit 1; }
+          ( cd "$D" && mcpp build > /dev/null 2>&1 ) || true
+          ( cd "$D" && mcpp run > tpl.log 2>&1 ) \
+            || { cat "$D/tpl.log"; echo "::error::the generated project does not run"; exit 1; }
+          grep -q 'hello from a Cortex-M' "$D/tpl.log" \
+            || { cat "$D/tpl.log"; echo "::error::the generated project ran without reaching the end"; exit 1; }
+          echo "the template's project boots"

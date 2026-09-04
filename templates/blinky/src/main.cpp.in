@@ -1,0 +1,11 @@
+// {{project.name}} — the smallest program that proves the whole chain works.
+//
+// It prints through semihosting, which reaches the host under an emulator and
+// under a debug probe alike, and it reports an exit status — which is what lets
+// `mcpp test` mean anything on a device.
+import mcpplibs.cortex_m_rt;
+
+int main() {
+    board::print("{{project.name}}: hello from a Cortex-M\n");
+    board::exit(0);
+}

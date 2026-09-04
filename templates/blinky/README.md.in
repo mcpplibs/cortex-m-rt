@@ -1,0 +1,36 @@
+# {{project.name}}
+
+```bash
+mcpp run                        # under the emulator
+mcpp run --features hardware    # on a board, over a debug probe
+mcpp run --list-runners         # what else this project can do
+```
+
+The first command needs nothing installed: the board package declares the
+emulator it needs and mcpp provisions it on the first `mcpp run`. `mcpp build`
+does not install it — the emulator is on the `run` tier, so compiling firmware
+in CI downloads nothing.
+
+## When the board arrives
+
+Add `--features hardware`. That is the whole change: the source, the manifest
+and the command are the same. `probe-rs` is installed the first time you ask,
+and only then.
+
+| | |
+|---|---|
+| `mcpp run` | flash, reset, stream output, report the exit status |
+| `mcpp run --runner flash` | write the image and stop — what a production line does |
+| `mcpp run --runner serve` | a debug server for an IDE to attach to |
+
+`mcpp run --list-runners` prints what this project actually supplies, which is
+not a list the engine holds: a package names its own runners, and mcpp knows
+none of them.
+
+## Changing the part
+
+`[build] target` in `mcpp.toml`. mcpp carries seven M-profile rows and they are
+not interchangeable — an object built for `thumbv7em` uses instructions a
+Cortex-M0 does not have. The memory map lives in the board package's linker
+script; a real part needs its own, and a project supplies one by writing
+`mcpp::link_script(...)` in its own `build.mcpp`.

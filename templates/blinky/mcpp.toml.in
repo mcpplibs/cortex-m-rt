@@ -1,0 +1,33 @@
+# {{project.name}} — firmware for a Cortex-M part.
+[package]
+name    = "{{project.name}}"
+version = "0.1.0"
+
+[build]
+# ⚠️ THE TRIPLE IS THE ONE LINE TO CHANGE FOR ANOTHER PART. mcpp's target table
+# has seven M-profile rows, and they produce incompatible objects: `thumbv7em`
+# uses instructions a Cortex-M0 does not have. Picking the row is picking the
+# part.
+target  = "thumbv7m-none-eabi"
+sources = ["src/main.cpp"]
+
+# The zero-libc tier: this program is the whole of its own environment. Nothing
+# here calls `printf`, and nothing links a C library.
+[target.thumbv7m-none-eabi]
+sysroot = ""
+
+[dependencies]
+cortex-m-rt = "{{self.version}}"
+
+# ⭐ ONE LINE IS WHAT MOVING TO HARDWARE COSTS.
+#
+#     mcpp run                        # the emulator
+#     mcpp run --features hardware    # the board, over a debug probe
+#
+# Same command, same source, same manifest. A project that has moved to hardware
+# for good says so on the dependency instead and stops installing an emulator:
+#
+#     cortex-m-rt = { version = "{{self.version}}", default-features = false,
+#                     features = ["hardware"] }
+[features]
+hardware = { forward = ["cortex-m-rt/hardware"] }

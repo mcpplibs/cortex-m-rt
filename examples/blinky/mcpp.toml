@@ -1,0 +1,44 @@
+# The first program: it prints, and it reports a status.
+#
+# ⭐ THE SAME TWO COMMANDS ON EITHER ENVIRONMENT.
+#
+#     mcpp run                        # under the emulator
+#     mcpp run --features hardware    # on the board
+#
+# Nothing else changes — not the source, not the manifest, not the command.
+[package]
+name    = "blinky"
+version = "0.1.0"
+
+[build]
+target  = "thumbv7m-none-eabi"
+sources = ["src/main.cpp"]
+
+# The zero-libc tier: this program is the whole of its own environment.
+[target.thumbv7m-none-eabi]
+sysroot = ""
+
+[dependencies]
+cortex-m-rt = { path = "../.." }
+
+# ⭐ ONE LINE IS WHAT MOVING TO HARDWARE COSTS.
+#
+# The board package expresses the two environments as features; this forwards
+# the project's own `hardware` to the board's, so the choice is made where every
+# other choice is made:
+#
+#     mcpp run                        # the emulator
+#     mcpp run --features hardware    # the board, without editing anything
+#
+# ⚠️ FEATURES ARE ADDITIVE, SO THE FLAG ADDS THE PROBE AND KEEPS THE EMULATOR.
+# That is the right behaviour for trying a board once — the emulator is already
+# installed and costs nothing. A project that has MOVED to hardware says so on
+# the dependency and stops paying for the emulator at all:
+#
+#     cortex-m-rt = { version = "0.1.0", default-features = false,
+#                     features = ["hardware"] }
+#
+# There is no third state, and no negative feature: dropping the default is how
+# every package in this ecosystem says "not that one".
+[features]
+hardware = { forward = ["cortex-m-rt/hardware"] }

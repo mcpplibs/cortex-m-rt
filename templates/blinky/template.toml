@@ -1,0 +1,3 @@
+[template]
+description = "Cortex-M firmware that builds, boots under an emulator and moves to a real board with one flag"
+default     = true

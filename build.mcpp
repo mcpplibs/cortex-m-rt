@@ -1,0 +1,110 @@
+import mcpp;
+import std;
+
+// cortex-m-rt — the BOARD, and the two ways of reaching it.
+//
+// ⭐⭐ `mcpp run` IS THE WHOLE OF THE COMMON CASE, ON EITHER ENVIRONMENT.
+//
+// On a device, "running a program" means writing it, resetting, attaching to
+// its output and reading its exit status — which is ONE command
+// (`probe-rs run`, `qemu-system-arm -kernel`), not several. So that command is
+// the DEFAULT runner in both environments, and the command a developer types
+// does not change when the board arrives on their desk:
+//
+//     mcpp run                                  # the emulator
+//     mcpp run --features hardware              # the board
+//
+// ⚠️ THE ENGINE KNOWS NONE OF THE NAMES BELOW. `flash`, `serve` and `erase` are
+// this package's vocabulary; a web package supplies `serve` meaning something
+// else and neither has to be in mcpp. `mcpp run --list-runners` reports what a
+// project actually has, which beats a fixed list of what an engine imagines.
+int main() {
+    // The memory map is a BOARD fact — the one thing a program can neither
+    // derive nor guess, and the one that does not change between one program on
+    // this board and the next.
+    mcpp::link_script("cortex-m.ld");
+    mcpp::rerun_if_changed("cortex-m.ld");
+
+    const std::string target = mcpp::target() ? mcpp::target() : "";
+    const bool hardware = mcpp::has_feature("hardware");
+
+    // Which QEMU machine models this target. ⚠️ A TABLE AND NOT A DEFAULT: an
+    // image built for `thumbv6m` does not run on a model that implements
+    // `thumbv7em`, and a wrong guess boots and then faults somewhere unrelated.
+    struct Row { const char* triple; const char* machine; const char* cpu; };
+    static constexpr Row kMachines[] = {
+        { "thumbv6m-none-eabi",        "microbit",   nullptr        },
+        { "thumbv7m-none-eabi",        "mps2-an385", "cortex-m3"    },
+        { "thumbv7em-none-eabi",       "mps2-an386", "cortex-m4"    },
+        { "thumbv7em-none-eabihf",     "mps2-an386", "cortex-m4"    },
+        { "thumbv8m.base-none-eabi",   "mps2-an505", nullptr        },
+        { "thumbv8m.main-none-eabi",   "mps2-an505", nullptr        },
+        { "thumbv8m.main-none-eabihf", "mps2-an505", nullptr        },
+    };
+
+    if (!hardware) {
+        const Row* row = nullptr;
+        for (auto const& r : kMachines)
+            if (target == r.triple) { row = &r; break; }
+        if (!row) {
+            // ⚠️ AN ERROR AND NOT A SILENT ABSENCE. A board package that
+            // configured no runner would leave `mcpp run` reporting a missing
+            // runner and advising a `runner` key — true in general, and not the
+            // cause here.
+            std::cerr << "cortex-m-rt: no emulator machine is known for target '"
+                      << target << "'. Add a row to build.mcpp, or select the "
+                         "`hardware` feature and reach the board through a probe.\n";
+            return 1;
+        }
+        // The bare program name: mcpp searches the bin/ of every payload
+        // declared under `[xlings.workspace]` by any package in the graph
+        // before it looks at PATH, and says where it looked when it finds
+        // nothing. No `xpkg_dir`, no absolute path, no advisory.
+        mcpp::runner("qemu-system-arm");
+        mcpp::runner("-machine"); mcpp::runner(row->machine);
+        if (row->cpu) { mcpp::runner("-cpu"); mcpp::runner(row->cpu); }
+        for (auto a : {"-nographic", "-semihosting", "-no-reboot", "-kernel"})
+            mcpp::runner(a);
+
+        // ⭐ THE NAMED EXCEPTIONS EXIST IN BOTH ENVIRONMENTS, which is what
+        // keeps a project's commands stable across the move to hardware.
+        // `serve` waits for a debugger instead of running.
+        mcpp::runner("serve", "qemu-system-arm");
+        mcpp::runner("serve", "-machine"); mcpp::runner("serve", row->machine);
+        if (row->cpu) { mcpp::runner("serve", "-cpu"); mcpp::runner("serve", row->cpu); }
+        for (auto a : {"-nographic", "-semihosting", "-no-reboot", "-S", "-gdb",
+                       "tcp::3333", "-kernel"})
+            mcpp::runner("serve", a);
+        // ⚠️ DECLARED, NOT INFERRED. A gdb stub does not terminate, and no argv
+        // says so. `mcpp run --runner serve` therefore streams its output and
+        // is stopped by the user rather than waited on.
+        mcpp::runner_longlived("serve");
+        return 0;
+    }
+
+    // ── The board ──────────────────────────────────────────────────────────
+    //
+    // ⭐ THE DEFAULT IS STILL "RUN IT". `probe-rs run` flashes, resets, streams
+    // RTT/semihosting output and exits with the program's status — the same
+    // four things the emulator line does, which is why it is the same command.
+    mcpp::runner("probe-rs");
+    for (auto a : {"run", "--catch-hardfault", "--catch-stackoverflow"})
+        mcpp::runner(a);
+
+    // Writing an image without running it: the step a production line performs.
+    mcpp::runner("flash", "probe-rs");
+    for (auto a : {"download", "--binary-format", "elf"})
+        mcpp::runner("flash", a);
+
+    // A debug server for an IDE to attach to. Long-lived, declared.
+    mcpp::runner("serve", "probe-rs");
+    for (auto a : {"gdb", "--gdb-connection-string", "127.0.0.1:3333"})
+        mcpp::runner("serve", a);
+    mcpp::runner_longlived("serve");
+
+    // ⚠️ ONE PROBE, ONE BOARD. Two `mcpp run` invocations against the same
+    // hardware interleave their SWD transactions and both fail in ways that
+    // look like a flaky board. `mcpp test` serialises on this.
+    mcpp::run_exclusive();
+    return 0;
+}
