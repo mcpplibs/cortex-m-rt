@@ -75,22 +75,34 @@ it — under an emulator and under a probe alike. That is what lets one package
 serve both, and what makes `mcpp test` work on a device at all: without an exit
 status, a test binary could print its verdict and have no way to report it.
 
+## The C library, when you want one
+
+```bash
+mcpp run --features libc
+```
+
+`picolibc`, as a **source package** compiled with your program's own flags — so
+there is no multilib to match and no ABI convention to get wrong. Not selecting
+it leaves the tier exactly as it was.
+
+⚠️ **The board sets the thread pointer, and without it a C library faults before
+its first output.** picolibc reaches `stdout` through thread-local storage;
+`src/start.c` calls `_init_tls`/`_set_tls` and the linker script defines the
+five symbols they read. Measured with that missing: a `printf` program linked
+cleanly, ran, printed nothing and hung. There is no diagnostic for that state.
+
 ## The zero-libc tier
 
 Every `thumb*-none-eabi*` row in mcpp's target table carries an empty C-library
 column, so a project targeting one begins with no libc unless it asks. This
 package stays there: it references no C library symbol.
 
-A C library arrives as a `libc` feature once `picolibc` is in the index as a
-source package. That is a separate release, and this one does not wait for it —
-which is the point of putting the two on a feature axis rather than in two
-versions.
+A C library arrives through the `libc` feature above.
 
 ⚠️ **Floating point on a soft-float row needs compiler builtins.** `-mfpu=none`
 makes the compiler lower a `float` multiply onto `__aeabi_fmul`, and at this tier
 there is nothing for that call to resolve against. Integer programs are
-unaffected; a program that needs floats needs the builtins package, which is
-part of the same later release.
+unaffected; `--features libc` brings both the C library and the builtins.
 
 ## Changing the part
 

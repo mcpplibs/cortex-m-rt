@@ -32,6 +32,14 @@ extern unsigned __bss_start, __bss_end;
 int  board_main(void);
 void Reset_Handler(void);
 
+/* Supplied by a C library when one is in the graph; the weak definitions below
+ * are what the zero-libc tier links instead. `__tls_base` is the linker
+ * script's, and is zero when no C library asked for a TLS block. */
+extern char __tls_base[] __attribute__((weak));
+__attribute__((weak)) void _init_tls(void* p)      { (void)p; }
+__attribute__((weak)) void _set_tls(void* p)       { (void)p; }
+__attribute__((weak)) void __libc_init_array(void) { }
+
 /* A handler nothing overrides. It spins rather than resetting: a fault that
  * silently restarts the machine is the hardest kind of bug to see, and this is
  * the state a debugger can actually be attached to. */
@@ -73,6 +81,28 @@ void Reset_Handler(void) {
     unsigned* src = &__data_load;
     while (dst < &__data_end) *dst++ = *src++;
     for (dst = &__bss_start; dst < &__bss_end; ) *dst++ = 0;
+
+    /* ⚠️⚠️ THE THREAD POINTER, AND WITHOUT IT A C LIBRARY FAULTS BEFORE ITS
+     * FIRST OUTPUT.
+     *
+     * A freestanding image has no thread pointer until something sets one, and
+     * picolibc reaches its `stdout` through thread-local storage. Measured with
+     * this call absent: a `printf` program built against `mcpplibs/picolibc`
+     * linked cleanly, ran, printed NOTHING and hung — the access faulted, the
+     * default handler span, and semihosting was never reached. No diagnostic
+     * exists for that state; the only evidence is silence.
+     *
+     * Weak, because a program on the zero-libc tier has no C library to
+     * initialise and must not be made to link one. The C library defines these
+     * when it is present, and this file's own definitions are used otherwise.
+     *
+     * ⭐ This is the half of the startup contract a BOARD owns. picolibc's own
+     * `picocrt` does the same three things and then decides which host layer to
+     * reach — which is a board decision, so this package makes it rather than
+     * taking picocrt's. */
+    _init_tls(__tls_base);
+    _set_tls(__tls_base);
+    __libc_init_array();
 
     board_main();
 

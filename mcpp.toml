@@ -11,7 +11,7 @@
 [package]
 namespace   = "mcpplibs"
 name        = "cortex-m-rt"
-version     = "0.1.0"
+version     = "0.2.0"
 description = "Board support for Cortex-M: startup, memory layout, semihosting console, and the runners that reach an emulator or a debug probe"
 license     = "Apache-2.0"
 authors     = ["mcpplibs"]
@@ -30,10 +30,9 @@ kind = "lib"
 # package stays there: it references no C library symbol, and its console goes
 # through semihosting rather than through `stdio`.
 #
-# A C library arrives as a `libc` feature once `picolibc` is in the index as a
-# source package. That is a separate release, and this one does not wait for it
-# — which is the whole point of putting the two on a feature axis rather than in
-# two versions.
+# A C library arrives through the `libc` feature below, as a SOURCE package
+# compiled with the program's own flags. Not selecting it leaves the tier
+# exactly as it was.
 
 [features]
 # ⚠️ `emulator` IS THE DEFAULT, AND THAT IS A DECISION ABOUT WHO IS READING.
@@ -43,6 +42,18 @@ kind = "lib"
 default  = ["emulator"]
 emulator = {}
 hardware = {}
+
+# ⭐⭐ THE C LIBRARY IS A FEATURE, AND NOT SELECTING IT IS THE ZERO-LIBC TIER.
+#
+# Every `thumb*-none-eabi*` row carries an empty C-library column, so a project
+# begins with none. This adds one — as a SOURCE package compiled with the
+# program's own flags, so there is no multilib to match and no ABI convention to
+# get wrong. `mcpp run --features libc` is the whole of it.
+#
+# ⭐ The same mechanism as `emulator`/`hardware`, used a second time. That is
+# what lets this package ship a C library without waiting for one, and lets a
+# project that does not want one never download it.
+libc = {}
 
 # ⭐⭐ EACH ENVIRONMENT BRINGS ITS OWN TOOL, AND ONLY ITS OWN.
 #
@@ -57,6 +68,13 @@ hardware = {}
 # flashes downloads nothing at all.
 [feature-xlings.emulator]
 "xim:qemu-arm" = { version = "9.2.4-1", when = "run" }
+
+# ⚠️ TWO PACKAGES AND NOT ONE. picolibc's printf formats floats through routines
+# no C library defines; the builtins are a separate package so a project already
+# supplying its own is not handed a second copy. picolibc depends on them, so a
+# consumer names only the C library.
+[feature-deps.libc]
+picolibc = "1.8.12"
 
 [feature-xlings.hardware]
 "xim:probe-rs" = { version = "", when = "run" }

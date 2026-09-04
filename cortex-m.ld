@@ -34,6 +34,31 @@ SECTIONS {
     } > RAM AT> FLASH
     __data_load = LOADADDR(.data);
 
+    /* ⚠️ THE TLS BLOCK, AND `__tls_base` IS WHAT A C LIBRARY LOOKS FOR. picolibc
+     * reaches its `stdout` through thread-local storage, and the startup file
+     * hands it this address. A script without these symbols links — they are
+     * weak — and the program then faults on its first output with no
+     * diagnostic. */
+    .tdata : { __tls_base = .; *(.tdata*) } > RAM AT> FLASH
+    .tbss (NOLOAD) : { __tbss_start = .; *(.tbss*) *(.tcommon) } > RAM
+
+    /* ⚠️ FIVE SYMBOLS, NOT ONE. `_init_tls` copies the initialised block and
+     * clears the zero one, and it reads every bound from the linker script —
+     * there is nowhere else they could come from. A script that defines
+     * `__tls_base` alone links (the startup file's declarations are weak) and
+     * then fails on `__tdata_source` and three siblings. `PROVIDE` so a project
+     * with its own script can define them differently without a clash. */
+    PROVIDE(__tdata_source = LOADADDR(.tdata));
+    PROVIDE(__tdata_size   = SIZEOF(.tdata));
+    PROVIDE(__tbss_offset  = __tbss_start - __tls_base);
+    PROVIDE(__tbss_size    = SIZEOF(.tbss));
+    /* ⚠️ AND ONE MORE, WHICH IS THE ABI's RATHER THAN THE SCRIPT's. AAPCS puts
+     * a two-word thread control block BELOW the thread pointer, so `_set_tls`
+     * subtracts this offset before writing it. Upstream spells it
+     * `MAX(8, __tls_align)`; eight is that value for every alignment a
+     * Cortex-M block has. */
+    PROVIDE(__arm32_tls_tcb_offset = 8);
+
     .bss : {
         __bss_start = .;
         *(.bss*)
